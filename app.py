@@ -35,6 +35,7 @@ def add_entry():
 
     #check if timestamp is at least >48 hours from current timestamp
     db.athletes.insert_one(athlete_obj)
+    
 
 if __name__ == '__main__':
     app.run(host="127.0.0.1", port = 8080, debug=True)
