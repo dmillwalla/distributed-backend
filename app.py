@@ -3,10 +3,11 @@ import os
 import datetime
 import time
 
-from flask import Flask, request, make_response
+from flask import Flask, request, make_response, jsonify
 from flask_cors import CORS
 
 from pymongo import MongoClient
+from bson.json_util import dumps
 
 import random
 
@@ -41,6 +42,8 @@ def add_entry():
     city = req_body['city']
     country = req_body['country']
     timestamp = req_body['timestamp']
+    
+    current_timestamp = time.time()
 
     namespace = "GLBL"
 
@@ -51,14 +54,39 @@ def add_entry():
         namespace = "NA"
 
     timestamp_obj = datetime.datetime.fromtimestamp(float(timestamp))
+    datetime_obj = datetime.datetime.fromtimestamp(timestamp_obj)
+
+    day_of_month = datetime_obj.strftime("%d") 
+    time_of_day = datetime_obj.strftime("%H")
     athlete_obj = {}
     athlete_obj["athlete_id"] = athlete_id
     athlete_obj["city"] = city
     athlete_obj["country"] = country
-    athlete_obj["timestamp"] = timestamp
+    athlete_obj["timestamp"] = float(timestamp)
+    athlete_obj["day"] = day_of_month
+    athlete_obj["time"] = time_of_day
 
     #check if timestamp is at least >48 hours from current timestamp
-    db[namespace + "-athletes"].insert_one(athlete_obj)
+    if current_timestamp - float(timestamp) < 60 * 60 * 24 * 3:
+        return_obj = {}
+        return_obj["status"] = "Failure"
+        return_obj["reason"] = "Can't update anything within 3 days. Stay wherever you are"
+        return make_response(jsonify(return_obj), 200)#reject update
+    
+    db["NA-athletes"].delete({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
+                        {"day": {"$eq": day_of_month}} ] })
+    db["EU-athletes"].delete({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
+                        {"day": {"$eq": day_of_month}} ] })
+
+    db["NA-agentslots"].delete({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
+                        {"day": {"$eq": day_of_month}} ] })
+    db["EU-agentslots"].delete({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
+                        {"day": {"$eq": day_of_month}} ] })
+
+
+    insert_result = db[namespace + "-athletes"].insert_one(athlete_obj)
+    athlete_obj["ID"] = insert_result.inserted_id
+    return make_response(jsonify(athlete_obj), 200)
 
 @app.route('/scheduleDoping', methods=['POST'])
 def schedule_doping():
@@ -70,7 +98,7 @@ def schedule_doping():
     athletes_list = []
     athletes_names_list = set()
     for each_avl_athlete in available_athletes:
-        datetime_obj = datetime.datetime.fromtimestamp(each_avl_athlete["timestamp"])
+        datetime_obj = datetime.datetime.fromtimestamp(float(each_avl_athlete["timestamp"]))
         key = each_avl_athlete["athlete_id"]
         value = datetime_obj.strftime("%d") + "-" + datetime_obj.strftime("%H")
         athlete_time_map[key].add(each_avl_athlete)
@@ -87,7 +115,7 @@ def schedule_doping():
     agent_slots = db[loc_string + "-agentslots"].find({"timestamp": {"$gt": current_timestamp}})
 
     for each_slot in agent_slots:
-        datetime_obj = datetime.datetime.fromtimestamp(each_slot["timestamp"])
+        datetime_obj = datetime.datetime.fromtimestamp(float(each_slot["timestamp"]))
         key = datetime_obj.strftime("%d") + "-" + datetime_obj.strftime("%H")
         agent_time_map[key].add(each_slot["agent_id"])
 
@@ -106,6 +134,12 @@ def schedule_doping():
                     db[loc_string + "-agentslots"].insert_one(agent_slot_obj)
                     agent_time_map[each_time_slot].add(avl_agent)
 
+    return_obj = {}
+    return_obj["status"] = "Success"
+    return_obj["details"] = "Scheduling completed"
+    
+    return make_response(jsonify(return_obj), 200)
+
 
 @app.route('/getUpcomingAgentSchedule/<agent_id>', methods=['GET'])
 def upcoming_agent_schedule(agent_id):
@@ -113,6 +147,8 @@ def upcoming_agent_schedule(agent_id):
     agent_slots = db[loc_string + "-agentslots"]\
         .find({ "$and": [{"timestamp": {"$gt": current_timestamp}}, 
                         {"agent_id": {"$eq": agent_id}} ] })
+
+    return make_response(jsonify(dumps(agent_slots)), 200)
 
 if __name__ == '__main__':
     app.run(host="127.0.0.1", port = 8080, debug=True)
