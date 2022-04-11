@@ -66,11 +66,18 @@ def add_entry():
     athlete_obj["day"] = day_of_month
     athlete_obj["time"] = time_of_day
 
-    #check if timestamp is at least >48 hours from current timestamp
-    if current_timestamp - float(timestamp) < 60 * 60 * 24 * 3:
+    #check if timestamp is at least >72 hours from current timestamp
+    if float(timestamp) - current_timestamp < 60 * 60 * 24 * 3:
         return_obj = {}
         return_obj["status"] = "Failure"
         return_obj["reason"] = "Can't update anything within 3 days. Stay wherever you are"
+        return make_response(jsonify(return_obj), 200)#reject update
+
+    #check if timestamp is not >240 hours from current timestamp
+    if float(timestamp) - current_timestamp > 60 * 60 * 24 * 10:
+        return_obj = {}
+        return_obj["status"] = "Failure"
+        return_obj["reason"] = "Can't update anything 10 days in the future. Stay wherever you are"
         return make_response(jsonify(return_obj), 200)#reject update
     
     db["NA-athletes"].delete({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
@@ -133,6 +140,7 @@ def schedule_doping():
                     agent_slot_obj = {"agent_id":avl_agent, "athlete_id": each_athlete, "day": day, "hour": hour, "timestamp": timestamp }
                     db[loc_string + "-agentslots"].insert_one(agent_slot_obj)
                     agent_time_map[each_time_slot].add(avl_agent)
+                    break
 
     return_obj = {}
     return_obj["status"] = "Success"
