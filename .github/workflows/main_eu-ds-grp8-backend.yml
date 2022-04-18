@@ -40,12 +40,12 @@ jobs:
             . 
             !venv/
 
-  deploy:
+  deploy-eu:
     runs-on: ubuntu-latest
     needs: build
     environment:
       name: "Production"
-      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
+      url: ${{ steps.deploy-to-webapp-eu.outputs.webapp-url }}
 
     steps:
       - name: Download artifact from build job
@@ -54,7 +54,7 @@ jobs:
           name: python-app
           path: .
 
-      - name: "Deploy to Azure Web App"
+      - name: "Deploy to Azure Web App EU"
         uses: azure/webapps-deploy@v2
         id: deploy-to-webapp-eu
         with:
@@ -62,7 +62,21 @@ jobs:
           slot-name: "Production"
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_60AD9A786F7C4B89B1A2365B34029C43 }}
 
-      - name: "Deploy to Azure Web App"
+  deploy-na:
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: "Production"
+      url: ${{ steps.deploy-to-webapp-na.outputs.webapp-url }}
+
+    steps:
+      - name: Download artifact from build job
+        uses: actions/download-artifact@v2
+        with:
+          name: python-app
+          path: .
+
+      - name: "Deploy to Azure Web App NA"
         uses: azure/webapps-deploy@v2
         id: deploy-to-webapp-na
         with:
