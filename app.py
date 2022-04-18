@@ -25,7 +25,15 @@ NA_COUNTRIES = ["MEX", "USA", "CAN"]
 
 @app.route('/')
 def root():
-    return make_response("Works", 200)
+    insert_result = db["test"].insert_one({"x": 1})
+    print(insert_result.inserted_id)
+
+    db["test"].update_one({'_id': insert_result.inserted_id},{"$set":{"y": 2}})
+
+    return_obj = {}
+    return_obj["status"] = "Works"
+    return_obj["stuff"] = str(insert_result.inserted_id)
+    return make_response(jsonify(return_obj), 200)
 
 @app.after_request
 def add_loc_headers(resp):
@@ -38,7 +46,7 @@ def get_random_index_in_range(start, end):
 @app.route('/addAthleteEntry', methods=['POST'])
 def add_entry():
     req_body = request.get_json()
-    athlete_id = req_body['ID']
+    athlete_id = req_body['athlete_id']
     city = req_body['city']
     country = req_body['country']
     timestamp = req_body['timestamp']
@@ -53,8 +61,8 @@ def add_entry():
     if country in NA_COUNTRIES:
         namespace = "NA"
 
-    timestamp_obj = datetime.datetime.fromtimestamp(float(timestamp))
-    datetime_obj = datetime.datetime.fromtimestamp(timestamp_obj)
+    timestamp_obj = datetime.datetime.fromtimestamp(int(float(timestamp)))
+    datetime_obj = datetime.datetime.fromtimestamp(int(float(timestamp)))
 
     day_of_month = datetime_obj.strftime("%d") 
     time_of_day = datetime_obj.strftime("%H")
@@ -89,7 +97,7 @@ def add_entry():
     db["NA-athletes"].delete_one({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
                         {"day": {"$eq": day_of_month}} ] })
     if na_athl_delete_id is not None:
-        db["athlete-avl-ops"].update_one({'_id': tracker_obj.inserted_id},{"NA-athletes_delete_id": na_athl_delete_id})
+        db["athlete-avl-ops"].update_one({'_id': tracker_obj.inserted_id},{"$set":{"NA-athletes_delete_id": na_athl_delete_id}})
     
 
     eu_athl_delete_id = db["EU-athletes"].find_one({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
@@ -97,7 +105,7 @@ def add_entry():
     db["EU-athletes"].delete_one({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
                         {"day": {"$eq": day_of_month}} ] })
     if eu_athl_delete_id is not None:
-        db["athlete-avl-ops"].update_one({'_id': tracker_obj.inserted_id},{"EU-athletes_delete_id": eu_athl_delete_id})
+        db["athlete-avl-ops"].update_one({'_id': tracker_obj.inserted_id},{"$set":{"EU-athletes_delete_id": eu_athl_delete_id}})
     
 
 
@@ -108,21 +116,22 @@ def add_entry():
     db["NA-agentslots"].delete_one({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
                         {"day": {"$eq": day_of_month}} ] })
     if na_agent_delete_id is not None:
-        db["athlete-avl-ops"].update_one({'_id': tracker_obj.inserted_id},{"NA-agentslots_delete_id": na_agent_delete_id})
+        db["athlete-avl-ops"].update_one({'_id': tracker_obj.inserted_id},{"$set":{"NA-agentslots_delete_id": na_agent_delete_id}})
 
     eu_agent_delete_id = db["EU-athletes"].find_one({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
                         {"day": {"$eq": day_of_month}} ] })
     db["EU-agentslots"].delete_one({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
                         {"day": {"$eq": day_of_month}} ] })
     if eu_agent_delete_id is not None:
-        db["athlete-avl-ops"].update_one({'_id': tracker_obj.inserted_id},{"EU-agentslots_delete_id": eu_agent_delete_id})
+        db["athlete-avl-ops"].update_one({'_id': tracker_obj.inserted_id},{"$set":{"EU-agentslots_delete_id": eu_agent_delete_id}})
     
 
 
     insert_result = db[namespace + "-athletes"].insert_one(athlete_obj)
-    db["athlete-avl-ops"].update_one({'_id': tracker_obj.inserted_id},{"insert_"+ namespace + "-athletes_id": insert_result.inserted_id,"op_status": "FINISHED"})
-    athlete_obj["ID"] = insert_result.inserted_id
-    return make_response(jsonify(athlete_obj), 200)
+    db["athlete-avl-ops"].update_one({'_id': tracker_obj.inserted_id},{"$set":{"insert_"+ namespace + "-athletes_id": insert_result.inserted_id,"op_status": "FINISHED"}})
+    print("insert_result.inserted_id", insert_result.inserted_id)
+    athlete_obj["ID"] = str(insert_result.inserted_id)
+    return make_response(dumps(athlete_obj), 200)
 
 @app.route('/scheduleDoping', methods=['POST'])
 def schedule_doping():
@@ -130,17 +139,17 @@ def schedule_doping():
     tracker_obj = db["scheduler-ops"].insert_one({"timestamp": current_timestamp, "op_status": "PENDING"})
     three_days = 60 * 60 * 24 * 3
     available_athletes = db[loc_string + "-athletes"].find({"timestamp": {"$gt": current_timestamp + three_days}})
-    athlete_map = defaultdict(lambda: set())
+    athlete_map = defaultdict(lambda: [])
     athlete_avl_map = {}
     agent_time_map = defaultdict(lambda: set())
     athlete_scheduled_time_map = defaultdict(lambda: set())
     athletes_list = []
     athletes_names_list = set()
     for each_avl_athlete in available_athletes:
-        datetime_obj = datetime.datetime.fromtimestamp(float(each_avl_athlete["timestamp"]))
+        datetime_obj = datetime.datetime.fromtimestamp(int(float(each_avl_athlete["timestamp"])))
         key = each_avl_athlete["athlete_id"]
         value = datetime_obj.strftime("%d") + "-" + datetime_obj.strftime("%H")
-        athlete_map[key].add(each_avl_athlete)
+        athlete_map[key].append(each_avl_athlete)
         athletes_list.append(key+"-"+ value)
         athlete_avl_map[key+"-"+value] = each_avl_athlete
         athletes_names_list.add(key)
@@ -154,37 +163,38 @@ def schedule_doping():
     agent_slots = db[loc_string + "-agentslots"].find({"timestamp": {"$gt": current_timestamp}})
 
     for each_slot in agent_slots:
-        datetime_obj = datetime.datetime.fromtimestamp(float(each_slot["timestamp"]))
+        datetime_obj = datetime.datetime.fromtimestamp(int(float(each_slot["timestamp"])))
         key = datetime_obj.strftime("%d") + "-" + datetime_obj.strftime("%H")
         agent_time_map[key].add(each_slot["agent_id"])
         athlete_scheduled_time_map[key].add(each_slot["athlete_id"])
 
     for each_athlete in athletes_names_list:
         random_int = get_random_index_in_range(0, 9)
-        if random_int > 5:
+        # if random_int > 5:
+        if random_int > -1:
             athlete_slots = athlete_map[each_athlete]
             for each_time_slot in athlete_slots:
-                datetime_obj = datetime.datetime.fromtimestamp(float(each_avl_athlete["timestamp"]))
+                timestamp = each_time_slot["timestamp"]
+                datetime_obj = datetime.datetime.fromtimestamp(int(float(timestamp)))
                 key = datetime_obj.strftime("%d") + "-" + datetime_obj.strftime("%H")
                 if len(athlete_scheduled_time_map[key]) > 0:
                     continue # don't double book athlete. Can also break to ignore athlete for double drug test in a week
                 agents_booked = agent_time_map[key]
                 free_agents = all_agents_name - agents_booked
                 if len(free_agents) > 0:
-                    day, hour = each_time_slot.split("-")
-                    avl_agent = free_agents.iterator().next()
-                    timestamp = athlete_avl_map[each_athlete+"-"+each_time_slot]
+                    day, hour = key.split("-")
+                    avl_agent = next(iter(free_agents))
                     agent_slot_obj = {"agent_id":avl_agent, "athlete_id": each_athlete, "day": day, "hour": hour, "timestamp": timestamp }
                     insert_op = db[loc_string + "-agentslots"].insert_one(agent_slot_obj)
                     db["scheduler-ops"].update_one({'_id': tracker_obj.inserted_id},{"$push":{"insert_"+ loc_string + "-agentslots_id": insert_op.inserted_id}})
-                    agent_time_map[each_time_slot].add(avl_agent)
+                    agent_time_map[key].add(avl_agent)
                     break
 
     return_obj = {}
     return_obj["status"] = "Success"
     return_obj["details"] = "Scheduling completed"
 
-    db["scheduler-ops"].update_one({'_id': tracker_obj.inserted_id},{"op_status": "FINISHED"})
+    db["scheduler-ops"].update_one({'_id': tracker_obj.inserted_id},{"$set":{"op_status": "FINISHED"}})
     
     return make_response(jsonify(return_obj), 200)
 
@@ -229,7 +239,7 @@ def upcoming_agent_schedule(agent_id):
         .find({ "$and": [{"timestamp": {"$gt": current_timestamp}}, 
                         {"agent_id": {"$eq": agent_id}} ] })
 
-    return make_response(jsonify(dumps(agent_slots)), 200)
+    return make_response(dumps(agent_slots), 200)
 
 if __name__ == '__main__':
     app.run(host="127.0.0.1", port = 8080, debug=True)
