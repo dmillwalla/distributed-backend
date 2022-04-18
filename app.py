@@ -79,25 +79,55 @@ def add_entry():
         return_obj["status"] = "Failure"
         return_obj["reason"] = "Can't update anything 10 days in the future. Stay wherever you are"
         return make_response(jsonify(return_obj), 200)#reject update
-    
+
+    tracker_obj = db["athlete-avl-ops"].insert_one({"timestamp": current_timestamp, "athlete_id": athlete_id, "op_status": "PENDING"})
+
+    # For Athletes
+
+    na_athl_delete_id = db["NA-athletes"].find_one({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
+                        {"day": {"$eq": day_of_month}} ] })
     db["NA-athletes"].delete_one({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
+                        {"day": {"$eq": day_of_month}} ] })
+    if na_athl_delete_id is not None:
+        db["athlete-avl-ops"].update_one({'_id': tracker_obj.inserted_id},{"NA-athletes_delete_id": na_athl_delete_id})
+    
+
+    eu_athl_delete_id = db["EU-athletes"].find_one({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
                         {"day": {"$eq": day_of_month}} ] })
     db["EU-athletes"].delete_one({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
                         {"day": {"$eq": day_of_month}} ] })
+    if eu_athl_delete_id is not None:
+        db["athlete-avl-ops"].update_one({'_id': tracker_obj.inserted_id},{"EU-athletes_delete_id": eu_athl_delete_id})
+    
 
+
+    # For Agents
+
+    na_agent_delete_id = db["NA-agentslots"].find_one({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
+                        {"day": {"$eq": day_of_month}} ] })
     db["NA-agentslots"].delete_one({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
+                        {"day": {"$eq": day_of_month}} ] })
+    if na_agent_delete_id is not None:
+        db["athlete-avl-ops"].update_one({'_id': tracker_obj.inserted_id},{"NA-agentslots_delete_id": na_agent_delete_id})
+
+    eu_agent_delete_id = db["EU-athletes"].find_one({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
                         {"day": {"$eq": day_of_month}} ] })
     db["EU-agentslots"].delete_one({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
                         {"day": {"$eq": day_of_month}} ] })
+    if eu_agent_delete_id is not None:
+        db["athlete-avl-ops"].update_one({'_id': tracker_obj.inserted_id},{"EU-agentslots_delete_id": eu_agent_delete_id})
+    
 
 
     insert_result = db[namespace + "-athletes"].insert_one(athlete_obj)
+    db["athlete-avl-ops"].update_one({'_id': tracker_obj.inserted_id},{"insert_"+ namespace + "-athletes_id": insert_result.inserted_id,"op_status": "FINISHED"})
     athlete_obj["ID"] = insert_result.inserted_id
     return make_response(jsonify(athlete_obj), 200)
 
 @app.route('/scheduleDoping', methods=['POST'])
 def schedule_doping():
     current_timestamp = time.time()
+    tracker_obj = db["scheduler-ops"].insert_one({"timestamp": current_timestamp, "op_status": "PENDING"})
     three_days = 60 * 60 * 24 * 3
     available_athletes = db[loc_string + "-athletes"].find({"timestamp": {"$gt": current_timestamp + three_days}})
     athlete_map = defaultdict(lambda: set())
@@ -145,13 +175,49 @@ def schedule_doping():
                     avl_agent = free_agents.iterator().next()
                     timestamp = athlete_avl_map[each_athlete+"-"+each_time_slot]
                     agent_slot_obj = {"agent_id":avl_agent, "athlete_id": each_athlete, "day": day, "hour": hour, "timestamp": timestamp }
-                    db[loc_string + "-agentslots"].insert_one(agent_slot_obj)
+                    insert_op = db[loc_string + "-agentslots"].insert_one(agent_slot_obj)
+                    db["scheduler-ops"].update_one({'_id': tracker_obj.inserted_id},{"$push":{"insert_"+ loc_string + "-agentslots_id": insert_op.inserted_id}})
                     agent_time_map[each_time_slot].add(avl_agent)
                     break
 
     return_obj = {}
     return_obj["status"] = "Success"
     return_obj["details"] = "Scheduling completed"
+
+    db["scheduler-ops"].update_one({'_id': tracker_obj.inserted_id},{"op_status": "FINISHED"})
+    
+    return make_response(jsonify(return_obj), 200)
+
+@app.route('/fixAthleteEntryFailure')
+def fix_athlete_entry_failure():
+    current_timestamp = time.time()
+    past_hour = 60 * 60
+    pending_obj = db["athlete-avl-ops"].find_one({"timestamp": {"$lt": current_timestamp - past_hour}})
+    
+    if pending_obj is not None:
+        na_athl = pending_obj["NA-athletes_delete_id"]
+        if na_athl is not None:
+            db["NA-athletes"].insert_one(na_athl)
+        eu_athl = pending_obj["EU-athletes_delete_id"]
+        if eu_athl is not None:
+            db["EU-athletes"].insert_one(eu_athl)
+        na_agent = pending_obj["NA-athletes_delete_id"]
+        if na_agent is not None:
+            db["NA-agentslots"].insert_one(na_agent)
+        eu_agent = pending_obj["EU-athletes_delete_id"]
+        if eu_agent is not None:
+            db["EU-agentslots"].insert_one(eu_agent)
+        na_inserted_id = pending_obj["insert_NA-athletes_id"]
+        if na_inserted_id is not None:
+            db["NA-athletes"].delete_one({'_id': na_inserted_id})
+        eu_inserted_id = pending_obj["insert_EU-athletes_id"]
+        if eu_inserted_id is not None:
+            db["EU-athletes"].delete_one({'_id': eu_inserted_id})
+
+
+    return_obj = {}
+    return_obj["status"] = "Success"
+    return_obj["details"] = "Failure Reconnaisance Completed"
     
     return make_response(jsonify(return_obj), 200)
 
