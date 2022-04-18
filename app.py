@@ -80,14 +80,14 @@ def add_entry():
         return_obj["reason"] = "Can't update anything 10 days in the future. Stay wherever you are"
         return make_response(jsonify(return_obj), 200)#reject update
     
-    db["NA-athletes"].delete({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
+    db["NA-athletes"].delete_one({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
                         {"day": {"$eq": day_of_month}} ] })
-    db["EU-athletes"].delete({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
+    db["EU-athletes"].delete_one({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
                         {"day": {"$eq": day_of_month}} ] })
 
-    db["NA-agentslots"].delete({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
+    db["NA-agentslots"].delete_one({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
                         {"day": {"$eq": day_of_month}} ] })
-    db["EU-agentslots"].delete({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
+    db["EU-agentslots"].delete_one({ "$and": [{"athlete_id": {"$eq": athlete_id}}, 
                         {"day": {"$eq": day_of_month}} ] })
 
 
@@ -98,17 +98,19 @@ def add_entry():
 @app.route('/scheduleDoping', methods=['POST'])
 def schedule_doping():
     current_timestamp = time.time()
-    available_athletes = db[loc_string + "-athletes"].find({"timestamp": {"$gt": current_timestamp}})
-    athlete_time_map = defaultdict(lambda: set())
+    three_days = 60 * 60 * 24 * 3
+    available_athletes = db[loc_string + "-athletes"].find({"timestamp": {"$gt": current_timestamp + three_days}})
+    athlete_map = defaultdict(lambda: set())
     athlete_avl_map = {}
     agent_time_map = defaultdict(lambda: set())
+    athlete_scheduled_time_map = defaultdict(lambda: set())
     athletes_list = []
     athletes_names_list = set()
     for each_avl_athlete in available_athletes:
         datetime_obj = datetime.datetime.fromtimestamp(float(each_avl_athlete["timestamp"]))
         key = each_avl_athlete["athlete_id"]
         value = datetime_obj.strftime("%d") + "-" + datetime_obj.strftime("%H")
-        athlete_time_map[key].add(each_avl_athlete)
+        athlete_map[key].add(each_avl_athlete)
         athletes_list.append(key+"-"+ value)
         athlete_avl_map[key+"-"+value] = each_avl_athlete
         athletes_names_list.add(key)
@@ -125,12 +127,17 @@ def schedule_doping():
         datetime_obj = datetime.datetime.fromtimestamp(float(each_slot["timestamp"]))
         key = datetime_obj.strftime("%d") + "-" + datetime_obj.strftime("%H")
         agent_time_map[key].add(each_slot["agent_id"])
+        athlete_scheduled_time_map[key].add(each_slot["athlete_id"])
 
     for each_athlete in athletes_names_list:
         random_int = get_random_index_in_range(0, 9)
         if random_int > 5:
-            time_slots = athlete_time_map[each_athlete]
-            for each_time_slot in time_slots:
+            athlete_slots = athlete_map[each_athlete]
+            for each_time_slot in athlete_slots:
+                datetime_obj = datetime.datetime.fromtimestamp(float(each_avl_athlete["timestamp"]))
+                key = datetime_obj.strftime("%d") + "-" + datetime_obj.strftime("%H")
+                if len(athlete_scheduled_time_map[key]) > 0:
+                    continue # don't double book athlete. Can also break to ignore athlete for double drug test in a week
                 agents_booked = agent_time_map[key]
                 free_agents = all_agents_name - agents_booked
                 if len(free_agents) > 0:
