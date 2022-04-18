@@ -192,7 +192,7 @@ def schedule_doping():
 def fix_athlete_entry_failure():
     current_timestamp = time.time()
     past_hour = 60 * 60
-    pending_obj = db["athlete-avl-ops"].find_one({"timestamp": {"$lt": current_timestamp - past_hour}})
+    pending_obj = db["athlete-avl-ops"].find_one({"$and":[{"op_status": {"$eq": "PENDING"}},{"timestamp": {"$lt": current_timestamp - past_hour}}]})
     
     if pending_obj is not None:
         na_athl = pending_obj["NA-athletes_delete_id"]
