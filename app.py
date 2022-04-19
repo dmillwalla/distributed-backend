@@ -223,11 +223,13 @@ def fix_athlete_entry_failure():
         eu_inserted_id = pending_obj["insert_EU-athletes_id"]
         if eu_inserted_id is not None:
             db["EU-athletes"].delete_one({'_id': eu_inserted_id})
+        db["athlete-avl-ops"].update_one({'_id': pending_obj["_id"]},{"$set":{"op_status": "RECONCILED"}})
+    
 
 
     return_obj = {}
     return_obj["status"] = "Success"
-    return_obj["details"] = "Failure Reconnaisance Completed"
+    return_obj["details"] = "Failure Reconciliation Completed"
     
     return make_response(jsonify(return_obj), 200)
 
