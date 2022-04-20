@@ -35,6 +35,14 @@ def root():
     return_obj["stuff"] = str(insert_result.inserted_id)
     return make_response(jsonify(return_obj), 200)
 
+@app.route('/test')
+def test():
+
+    return_obj = {}
+    return_obj["status"] = "Works"
+    return_obj["stuff"] = str(time.time())
+    return make_response(jsonify(return_obj), 200)
+
 @app.after_request
 def add_loc_headers(resp):
     resp.headers['X-LOC']=loc_string
