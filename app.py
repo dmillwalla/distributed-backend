@@ -25,6 +25,14 @@ NA_COUNTRIES = ["MEX", "USA", "CAN"]
 
 @app.route('/')
 def root():
+    
+    return_obj = {}
+    return_obj["status"] = "Works"
+    return_obj["stuff"] = "Works"
+    return make_response(jsonify(return_obj), 200)
+
+@app.route('/testmongo')
+def testmongo():
     insert_result = db["test"].insert_one({"x": 1})
     print(insert_result.inserted_id)
 
