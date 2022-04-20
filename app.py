@@ -226,7 +226,6 @@ def fix_athlete_entry_failure():
         db["athlete-avl-ops"].update_one({'_id': pending_obj["_id"]},{"$set":{"op_status": "RECONCILED"}})
     
 
-
     return_obj = {}
     return_obj["status"] = "Success"
     return_obj["details"] = "Failure Reconciliation Completed"
